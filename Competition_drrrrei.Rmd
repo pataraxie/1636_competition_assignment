@@ -1,0 +1,133 @@
+---
+title: "Competition_drrrrei"
+author: "Group drrrrei"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())
+
+library(tidyverse)
+library(naniar)
+library(dplyr)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(ranger)
+#library(tuneRanger)
+library(caret)
+library(stats) 
+library(gridExtra)
+library(ranger)
+library(stargazer)
+library(xgboost)
+library(randomForest)
+library(visdat)
+library(Hmisc)
+library(gbm)
+library(psych)
+
+training_test_data <- read.csv(file.path("./input_data", "trainig_test_data.csv"), header = TRUE)
+holdout_data <- read.csv(file.path("./input_data", "holdout_data.csv"), header = TRUE)
+```
+
+```{r Data Wrangling} 
+#merging both datasets
+training_test_data <- training_test_data %>%
+  mutate(holdout = 0)
+
+holdout_data <- holdout_data %>%
+  mutate(holdout = 1,
+         income = NA)
+
+data_original <- rbind(training_test_data, holdout_data)
+
+attach(data_original)
+
+#mutating the features to get what we want // WE DID SOME EXPLORATORY ANALYSIS AS WELL BUT THIS IS NOT INCLUDED IN OUR SUBMITTED CODE, AS IT WAS JUST TO GET A FEELING FOR THE DATA
+data <- data_original %>%
+  as_tibble() %>%
+  mutate_at(c("workhours1", "workhours2", "children"), as.numeric) %>%
+  mutate(income = log(income),
+         line = replace_na(line, 1),
+         line = if_else((line == "3" | line == "4" | line == "5" | line == "6" | line == "7"), "3", as.character(line)),
+         workhours1 = replace_na(workhours1, median(workhours1, na.rm = TRUE)),
+         workhours2 = replace_na(workhours2, median(workhours2, na.rm = TRUE)),
+         marriage = if_else((marriage == "MarriedCivilianSpousePresent" | marriage == "MarriedArmedForcesSpousePresent" | marriage == "MarriedSpouseAbsent"), "Married", marriage),
+         race = if_else((race == "4" | race == "5"), "Other", race),
+         veteran = replace_na(veteran, "OtherService"),
+         veteran = if_else((veteran == "Nonveteran" | veteran == "OtherService"), veteran, "Veteran"),
+         city = replace_na(city, "unknown"),
+         ethnicity = if_else((ethnicity == "Chicano" | ethnicity == "Cuban" | ethnicity == "Mexican" | ethnicity == "MexicanAmerican" | ethnicity == "OtherSpanish" | ethnicity == "PuertoRican"), "CentralOrSouthAmerican", ethnicity),
+         ethnicity = replace_na(ethnicity, "DontKnow"),
+         status_last_week = replace_na(status_last_week, "Working"),
+         status_last_week = if_else((status_last_week == "Withajob" | status_last_week == "Working"), "Working", status_last_week),
+         class2 = replace_na(class2, "PrivateNonProfitorForProfit"),
+         class2 = if_else((class2 == "GovernmentFederal" | class2 == "GovernmentLocal" | class2 == "GovernmentState"), "Government", class2),
+         paidbyhour = replace_na(paidbyhour, "unknown"),
+         union = replace_na(union, "unknown"),
+         children = replace_na(children, mean(children, na.rm = TRUE)),
+         education = replace_na(education, "unknown"),
+         income_change = if_else((income_a != "NoChange" | income_b != "NoChange" | income_c != "NoChange" | income_d != "NoChange"), "Change", "NoChange")) %>%
+  select(-income_a, -income_b, -income_c, -income_d)
+
+
+#Creating a test-train split, THIS SHOULD NOT CHANGE THE ORDERING OF THE DATA, SO PREDICTIONS SHOULD BE IN THE RIGHT ORDER!
+set.seed(124)
+training_testing <- data %>%
+  filter(holdout == 0) %>%
+  select(-child_info) %>%
+  mutate(training = sample(c("train", "test"), n(), replace = TRUE, prob = c(0.8, 0.2)))
+
+training <- training_testing %>%
+  filter(training == "train") %>%
+  select(-training)
+
+testing <- training_testing %>%
+  filter(training == "test") %>%
+  select(-training)
+
+holdout <- data %>%
+  filter(holdout == 1) %>%
+  select(-child_info)
+```
+
+```{r Models and Predictions}
+# INCLUDING BASIC TREES AND NORMAL LINEAR REGRESSIONS WAS NOT USEFUL FOR OUR FINAL MODEL, SO WE LEFT THEM OUT!
+
+#A first Random Forest
+RF1 = ranger(data = training, dependent.variable.name = "income", importance = "impurity")
+
+# tuning
+control = trainControl(method = "cv", number = 5)
+tuning_grid = expand.grid(mtry = seq(20, 30, by = 5), splitrule = "variance", min.node.size = seq(1, 5, by = 2))
+
+# run rf /// TAKES A LOT OF TIME!
+rf_caret = train(data = training, income ~ ., method = "ranger", trControl = control, tuneGrid = tuning_grid, importance = "impurity")
+
+# rf with optimal parameters
+rf_caret_fin <- rf_caret$finalModel
+
+# variable importance
+varImp(rf_caret)
+
+
+
+##### predictions
+
+# predicting the training data and seeing how we do with our RMSE
+Metrics::rmse(exp(testing$income), exp(predict.train(rf_caret, newdata = testing))) # RMSE = 1026,33 // THIS IS OUR RMSE IN THE TRAINING DATASET
+
+# final predictions for the holdout data
+predictions_holdout <- exp(predict.train(rf_caret, newdata = holdout)) #THOSE ARE THE PREDICTIONS FOR THE HOLDOUT DATASET
+
+### The final .csv files
+#write.csv2(predictions_holdout, "predictions.csv")
+
+#holdout %>%
+#  mutate(prediction = predictions_holdout) %>%
+#  write.csv2(., "holdout data incl pred 1026.csv")
+```
+
