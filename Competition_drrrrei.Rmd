@@ -118,13 +118,13 @@ varImp(rf_caret)
 ##### predictions
 
 # predicting the training data and seeing how we do with our RMSE
-Metrics::rmse(exp(testing$income), exp(predict.train(rf_caret, newdata = testing))) # RMSE = 1026,33 // THIS IS OUR RMSE IN THE TRAINING DATASET
+Metrics::rmse(exp(testing$income), exp(predict.train(rf_caret, newdata = testing))) # RMSE = 1025,99 // THIS IS OUR RMSE IN THE TRAINING DATASET
 
 # final predictions for the holdout data
 predictions_holdout <- exp(predict.train(rf_caret, newdata = holdout)) #THOSE ARE THE PREDICTIONS FOR THE HOLDOUT DATASET
 
 ### The final .csv files
-#write.csv2(predictions_holdout, "predictions.csv")
+#write.csv2(predictions_holdout, "predictions.csv") // NAMED THE COLUMN MANUALLY
 
 #holdout %>%
 #  mutate(prediction = predictions_holdout) %>%
